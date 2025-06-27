@@ -978,6 +978,7 @@ dependencies = [
     { name = "langgraph" },
     { name = "langgraph-cli", extra = ["inmem"] },
     { name = "langgraph-prebuilt" },
+    { name = "python-dotenv" },
 ]
 
 [package.metadata]
@@ -993,6 +994,7 @@ requires-dist = [
     { name = "langgraph", specifier = ">=0.4.10" },
     { name = "langgraph-cli", extras = ["inmem"], specifier = ">=0.3.3" },
     { name = "langgraph-prebuilt", specifier = ">=0.2.3" },
+    { name = "python-dotenv", specifier = ">=1.1.0" },
 ]
 
 [[package]]

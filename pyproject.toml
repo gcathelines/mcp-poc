@@ -16,4 +16,5 @@ dependencies = [
     "langgraph>=0.4.10",
     "langgraph-cli[inmem]>=0.3.3",
     "langgraph-prebuilt>=0.2.3",
+    "python-dotenv>=1.1.0",
 ]

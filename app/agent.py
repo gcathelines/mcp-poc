@@ -1,30 +1,37 @@
 import asyncio
+import os
 
+from dotenv import load_dotenv
 from langchain_core.messages import SystemMessage
 
 # from langchain_ollama import ChatOllama
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_mcp_adapters.client import MultiServerMCPClient
-from langgraph.graph import START, MessagesState, StateGraph
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.graph import START, Graph, MessagesState, StateGraph
 from langgraph.prebuilt import ToolNode, tools_condition
 
-client = MultiServerMCPClient(
-    {
-        "bigquery": {
-            "url": "http://localhost:4200/mcp/",
-            "transport": "streamable_http",
-        },
-    }
-)
 
+async def initialize() -> Graph:
+    env = load_dotenv()
+    if not env:
+        raise RuntimeError("Failed to load environment variables from .env file.")
 
-async def main():
+    client = MultiServerMCPClient(
+        {
+            "bigquery": {
+                "url": "http://localhost:4200/mcp/",
+                "transport": "streamable_http",
+            },
+        }
+    )
     tools = await client.get_tools()
 
     # Define LLM with bound tools
-    # model = os.getenv("OLLAMA_MODEL", "mistral:latest")
-    # llm = ChatOllama(model=model)
-    llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash")
+    llm = ChatGoogleGenerativeAI(
+        model="gemini-2.5-flash",
+        google_api_key=os.getenv("GOOGLE_API_KEY"),
+    )
     llm_with_tools = llm.bind_tools(tools)
 
     # System message
@@ -33,8 +40,9 @@ async def main():
     )
 
     # Node
-    def assistant(state: MessagesState) -> MessagesState:
-        return {"messages": [llm_with_tools.invoke([sys_msg] + state["messages"])]}
+    async def assistant(state: MessagesState) -> MessagesState:
+        response_message = await llm_with_tools.ainvoke([sys_msg] + state["messages"])
+        return {"messages": [response_message]}
 
     # Build graph
     builder = StateGraph(MessagesState)
@@ -50,8 +58,9 @@ async def main():
     builder.add_edge("tools", "assistant")
 
     # Compile graph
-    global graph
-    graph = builder.compile()
+    memory = MemorySaver()
+    graph = builder.compile(checkpointer=memory)
+    return graph
 
 
-asyncio.run(main())
+graph = asyncio.run(initialize())
