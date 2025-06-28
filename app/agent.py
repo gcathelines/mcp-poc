@@ -58,8 +58,16 @@ async def initialize() -> Graph:
     builder.add_edge("tools", "assistant")
 
     # Compile graph
-    memory = MemorySaver()
-    graph = builder.compile(checkpointer=memory)
+
+    graph = None
+    # We cant use MemorySaver in langgraph studio. Commented out for now.
+    if os.getenv("AGENT_MODE") == "studio":
+        print("Running in LangGraph Studio mode. MemorySaver is disabled.")
+        graph = builder.compile()
+    else:
+        memory = MemorySaver()
+        graph = builder.compile(checkpointer=memory)
+    
     return graph
 
 
