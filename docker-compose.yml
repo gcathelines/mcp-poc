@@ -1,0 +1,12 @@
+version: '3.8'
+
+services:
+  server:
+    build: .
+    ports:
+      - "4200:4200"
+    command: uv run src/bigquery/server.py
+    environment:
+      GOOGLE_APPLICATION_CREDENTIALS: /etc/gcloud/credentials.json
+    volumes:
+      - ~/credentials/google-ai-playground-sa-key.json:/etc/gcloud/credentials.json:ro
