@@ -5,7 +5,7 @@ from mcp.server.fastmcp import FastMCP
 mcp = FastMCP(
     name="BigQuery COVID-19 Analysis",
     instructions="This server provides data analysis tools.",
-    host="127.0.0.1",
+    host="0.0.0.0",
     port=4200,
 )
 
