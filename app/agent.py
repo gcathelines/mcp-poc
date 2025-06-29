@@ -3,6 +3,9 @@ import os
 
 from dotenv import load_dotenv
 from langchain_core.messages import SystemMessage
+from langchain_core.runnables import RunnableConfig
+from langchain_core.tools import BaseTool
+from langchain_core.tools import tool as create_tool
 
 # from langchain_ollama import ChatOllama
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -10,6 +13,8 @@ from langchain_mcp_adapters.client import MultiServerMCPClient
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import START, Graph, MessagesState, StateGraph
 from langgraph.prebuilt import ToolNode, tools_condition
+from langgraph.prebuilt.interrupt import HumanInterrupt, HumanInterruptConfig
+from langgraph.types import interrupt
 
 
 async def initialize() -> Graph:
@@ -26,6 +31,17 @@ async def initialize() -> Graph:
         }
     )
     tools = await client.get_tools()
+    # generate tool calls with human in the loop
+    tools = [
+        add_human_in_the_loop(
+            tool,
+            interrupt_config=HumanInterruptConfig(
+                description="Please review the tool call",
+                action_request_schema=tool.args_schema,
+            ),
+        )
+        for tool in tools
+    ]
 
     # Define LLM with bound tools
     llm = ChatGoogleGenerativeAI(
@@ -41,6 +57,9 @@ async def initialize() -> Graph:
 
     # Node
     async def assistant(state: MessagesState) -> MessagesState:
+        # The Gemini API requires content to be non-empty.
+        # We add a placeholder to the AIMessage if it has tool_calls but empty content.
+
         response_message = await llm_with_tools.ainvoke([sys_msg] + state["messages"])
         return {"messages": [response_message]}
 
@@ -67,8 +86,40 @@ async def initialize() -> Graph:
     else:
         memory = MemorySaver()
         graph = builder.compile(checkpointer=memory)
-    
+
     return graph
+
+
+def add_human_in_the_loop(
+    tool: BaseTool, *, interrupt_config: HumanInterruptConfig = None
+) -> BaseTool:
+    @create_tool(
+        tool.name,
+        description=tool.description,
+        args_schema=tool.args_schema,
+    )
+    async def call_tool_with_interrupt(
+        config: RunnableConfig,
+        **tool_input,
+    ):
+        request: HumanInterrupt = {
+            "action_request": {
+                "action": tool.name,
+                "args": tool_input,
+            },
+            "config": interrupt_config,
+            "description": "Please review the tool call",
+        }
+
+        response = interrupt([request])[0]
+        if response["type"] == "accept":
+            tool_response = await tool.ainvoke(tool_input, config)
+        else:
+            tool_response = "Tool call was rejected by the user."
+
+        return tool_response
+
+    return call_tool_with_interrupt
 
 
 graph = asyncio.run(initialize())
