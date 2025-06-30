@@ -1,4 +1,3 @@
-import asyncio
 import os
 
 from dotenv import load_dotenv
@@ -10,14 +9,16 @@ from langchain_core.tools import tool as create_tool
 # from langchain_ollama import ChatOllama
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_mcp_adapters.client import MultiServerMCPClient
-from langgraph.checkpoint.memory import MemorySaver
-from langgraph.graph import START, Graph, MessagesState, StateGraph
+from langgraph.graph import START, MessagesState, StateGraph
 from langgraph.prebuilt import ToolNode, tools_condition
 from langgraph.prebuilt.interrupt import HumanInterrupt, HumanInterruptConfig
 from langgraph.types import interrupt
 
 
-async def initialize() -> Graph:
+import asyncio
+
+
+async def initialize() -> StateGraph:
     env = load_dotenv()
     if not env:
         raise RuntimeError("Failed to load environment variables from .env file.")
@@ -76,18 +77,7 @@ async def initialize() -> Graph:
     )
     builder.add_edge("tools", "assistant")
 
-    # Compile graph
-
-    graph = None
-    # We cant use MemorySaver in langgraph studio. Commented out for now.
-    if os.getenv("AGENT_MODE") == "studio":
-        print("Running in LangGraph Studio mode. MemorySaver is disabled.")
-        graph = builder.compile()
-    else:
-        memory = MemorySaver()
-        graph = builder.compile(checkpointer=memory)
-
-    return graph
+    return builder
 
 
 def add_human_in_the_loop(
@@ -122,4 +112,5 @@ def add_human_in_the_loop(
     return call_tool_with_interrupt
 
 
-graph = asyncio.run(initialize())
+graph = asyncio.run(initialize()).compile()
+

@@ -11,6 +11,10 @@ WORKDIR /app
 # Install uv as root (system-wide within the container)
 RUN python -m pip install --no-cache-dir uv
 
+# Install system dependencies for psycopg
+RUN apt-get update && apt-get install -y libpq-dev && rm -rf /var/lib/apt/lists/*
+
+
 # Create a non-root user and set up their environment
 RUN adduser --system --group --home /home/appuser --disabled-password appuser \
     && chown -R appuser:appuser /app
@@ -27,13 +31,13 @@ ENV PATH="/usr/local/bin:${PATH}"
 USER appuser
 
 # Copy only the dependency files first to leverage Docker's build cache
-COPY pyproject.toml uv.lock ./
+COPY --chown=appuser:appuser pyproject.toml uv.lock ./
 
 # Install project dependencies using uv from the lockfile
 RUN uv sync --no-cache
 
 # Copy the rest of the application code
-COPY . .
+COPY --chown=appuser:appuser . .
 
 # Expose the ports the services will run on
 EXPOSE 4200

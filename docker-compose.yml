@@ -10,3 +10,18 @@ services:
       GOOGLE_APPLICATION_CREDENTIALS: /etc/gcloud/credentials.json
     volumes:
       - ~/credentials/google-ai-playground-sa-key.json:/etc/gcloud/credentials.json:ro
+
+  postgres:
+    image: postgres:17.5
+    restart: always
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
