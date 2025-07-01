@@ -20,6 +20,7 @@ async def loop(graph: Runnable):
     print("\t/list - List checkpoints")
     print("\t/new <id>- Create new checkpoint")
     print("\t/resume <id> - Resume checkpoint for given id")
+    print("\t/summarize - Summarize the conversation")
 
     # you can get the name of the node you want to stream from by checking the graph structure
     resume_command_needed = False
@@ -50,22 +51,16 @@ async def loop(graph: Runnable):
                         print("\n👋 Goodbye!")
                         break
                     elif message == "/list":
-                        threads = await db_conn.execute(
-                            "select distinct(thread_id) from checkpoints;"
-                        )
                         print("Available checkpoints:")
-                        for cpt in await threads.fetchall():
+                        for cpt in await list_checkpoint(db_conn):
                             print(cpt[0])
                     elif message.startswith("/resume "):
                         id = message.split(" ")[1]
                         if not id:
                             print("Please provide a checkpoint ID to resume.")
                             continue
-                        threads = await db_conn.execute(
-                            "select * from checkpoints where thread_id = %s limit 1;",
-                            (id,),
-                        )
-                        if not await threads.fetchone():
+                        threads = await get_checkpoint(db_conn, id)
+                        if not threads:
                             print(f"No checkpoint found with ID: {id}")
                             continue
                         else:
@@ -76,17 +71,24 @@ async def loop(graph: Runnable):
                         if not id:
                             print("Please provide a checkpoint ID to create.")
                             continue
-                        threads = await db_conn.execute(
-                            "select * from checkpoints where thread_id = %s limit 1;",
-                            (id,),
-                        )
-                        if await threads.fetchone():
+                        threads = await get_checkpoint(db_conn, id)
+                        if threads:
                             print(f"Checkpoint with ID: {id} already exists.")
                             continue
                         else:
                             print(f"Creating checkpoint with ID: {id}")
                             config = {"configurable": {"thread_id": str(id)}}
-
+                    elif message.startswith("/summarize "):
+                        print("Summarizing the conversation...")
+                        async for stream_mode, chunk in graph.astream(
+                            {"need_summarization": True},
+                            config,
+                            stream_mode=["updates", "messages"],
+                        ):
+                            resume_command_needed = process_chunk(stream_mode, chunk)
+                            if resume_command_needed:
+                                break
+                        continue
                 else:
                     async for stream_mode, chunk in graph.astream(
                         {
@@ -109,6 +111,18 @@ async def loop(graph: Runnable):
             break
         except EOFError:
             break
+
+
+async def list_checkpoint(db_conn: AsyncConnection):
+    threads = await db_conn.execute("select distinct(thread_id) from checkpoints;")
+    return await threads.fetchall()
+
+
+async def get_checkpoint(db_conn: AsyncConnection, thread_id: str):
+    threads = await db_conn.execute(
+        "select * from checkpoints where thread_id = %s limit 1;", (thread_id,)
+    )
+    return await threads.fetchone()
 
 
 def process_chunk(stream_mode: str, chunk: dict) -> bool:

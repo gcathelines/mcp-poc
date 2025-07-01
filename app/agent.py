@@ -1,7 +1,9 @@
+import asyncio
 import os
+from typing import Any, Literal, Union
 
 from dotenv import load_dotenv
-from langchain_core.messages import SystemMessage
+from langchain_core.messages import HumanMessage, RemoveMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import BaseTool
 from langchain_core.tools import tool as create_tool
@@ -9,13 +11,15 @@ from langchain_core.tools import tool as create_tool
 # from langchain_ollama import ChatOllama
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_mcp_adapters.client import MultiServerMCPClient
-from langgraph.graph import START, MessagesState, StateGraph
+from langgraph.graph import END, START, MessagesState, StateGraph
 from langgraph.prebuilt import ToolNode, tools_condition
 from langgraph.prebuilt.interrupt import HumanInterrupt, HumanInterruptConfig
 from langgraph.types import interrupt
 
 
-import asyncio
+class State(MessagesState):
+    summary: str
+    need_summarization: bool = False
 
 
 async def initialize() -> StateGraph:
@@ -44,31 +48,59 @@ async def initialize() -> StateGraph:
         for tool in tools
     ]
 
-    # Define LLM with bound tools
     llm = ChatGoogleGenerativeAI(
         model="gemini-2.5-flash",
         google_api_key=os.getenv("GOOGLE_API_KEY"),
     )
     llm_with_tools = llm.bind_tools(tools)
 
-    # System message
     sys_msg = SystemMessage(
-        content="You are a helpful assistant tasked with analyzing data from bigquery datasets."
+        # content="You are a helpful assistant tasked with analyzing data from bigquery datasets."
+        content="You are a helpful assistant."
     )
 
-    # Node
-    async def assistant(state: MessagesState) -> MessagesState:
-        # The Gemini API requires content to be non-empty.
-        # We add a placeholder to the AIMessage if it has tool_calls but empty content.
-
-        response_message = await llm_with_tools.ainvoke([sys_msg] + state["messages"])
+    async def assistant(state: State) -> State:
+        messages = [sys_msg]
+        summary = state.get("summary", "")
+        if summary:
+            system_message = f"Summary of conversation earlier: {summary}"
+            messages = messages + [SystemMessage(content=system_message)]
+        response_message = await llm_with_tools.ainvoke(messages + state["messages"])
         return {"messages": [response_message]}
 
+    def summarize_conversation(state: State):
+        # First, we get any existing summary
+        summary = state.get("summary", "")
+
+        # Create our summarization prompt
+        if summary:
+            # A summary already exists
+            summary_message = (
+                f"This is summary of the conversation to date: {summary}\n\n"
+                "Extend the summary by taking into account the new messages above:"
+            )
+
+        else:
+            summary_message = "Create a summary of the conversation above:"
+
+        # Add prompt to our history
+        messages = state["messages"] + [HumanMessage(content=summary_message)]
+        response = llm.invoke(messages)
+
+        # Delete all but the 2 most recent messages
+        delete_messages = [RemoveMessage(id=m.id) for m in state["messages"][:-2]]
+        return State(
+            summary=response.content,
+            messages=delete_messages,
+            need_summarization=False,
+        )
+
     # Build graph
-    builder = StateGraph(MessagesState)
+    builder = StateGraph(State)
     builder.add_node("assistant", assistant)
     builder.add_node("tools", ToolNode(tools))
-    builder.add_edge(START, "assistant")
+    builder.add_node("summarize", summarize_conversation)
+    builder.add_edge("summarize", END)
     builder.add_conditional_edges(
         "assistant",
         # If the latest message (result) from assistant is a tool call -> tools_condition routes to tools
@@ -77,7 +109,19 @@ async def initialize() -> StateGraph:
     )
     builder.add_edge("tools", "assistant")
 
+    # builder.add_edge(START, "assistant")
+    builder.add_conditional_edges(START, summarize_condition)
+
     return builder
+
+
+def summarize_condition(
+    state: Union[list[Any], dict[str, Any], Any],
+) -> Literal["summarize", "assistant"]:
+    if state.get("need_summarization", False):
+        # If the state has a summary, we want to summarize the conversation
+        return "summarize"
+    return "assistant"
 
 
 def add_human_in_the_loop(
@@ -113,4 +157,3 @@ def add_human_in_the_loop(
 
 
 graph = asyncio.run(initialize()).compile()
-
