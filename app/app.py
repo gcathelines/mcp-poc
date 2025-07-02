@@ -26,85 +26,75 @@ async def loop(graph: Runnable):
     resume_command_needed = False
     while True:
         try:
+            message = input("🧠 You: ").strip()
+            payload = None
+
+            if not message:
+                continue
+
             if resume_command_needed:
-                review = input("🔧 Use [y/Y] to accept: ").strip()
                 type = "reject"
                 resume_command_needed = False
-                if review.lower() == "y":
+                if message.lower() == "y":
                     type = "accept"
-                async for stream_mode, chunk in graph.astream(
-                    Command(resume=[{"type": type}]),
-                    config,
-                    stream_mode=["updates", "messages"],
-                ):
-                    resume_command_needed = process_chunk(stream_mode, chunk)
-                    if resume_command_needed:
-                        break
-            else:
-                message = input("🧠 You: ").strip()
 
-                if not message:
-                    continue
+                payload = Command(resume=[{"type": type}])
 
-                if message.startswith("/"):
-                    if message == "/quit":
-                        print("\n👋 Goodbye!")
-                        break
-                    elif message == "/list":
-                        print("Available checkpoints:")
-                        for cpt in await list_checkpoint(db_conn):
-                            print(cpt[0])
-                    elif message.startswith("/resume "):
-                        id = message.split(" ")[1]
-                        if not id:
-                            print("Please provide a checkpoint ID to resume.")
-                            continue
-                        threads = await get_checkpoint(db_conn, id)
-                        if not threads:
-                            print(f"No checkpoint found with ID: {id}")
-                            continue
-                        else:
-                            print(f"Resuming checkpoint with ID: {id}")
-                            config = {"configurable": {"thread_id": str(id)}}
-                    elif message.startswith("/new "):
-                        id = message.split(" ")[1]
-                        if not id:
-                            print("Please provide a checkpoint ID to create.")
-                            continue
-                        threads = await get_checkpoint(db_conn, id)
-                        if threads:
-                            print(f"Checkpoint with ID: {id} already exists.")
-                            continue
-                        else:
-                            print(f"Creating checkpoint with ID: {id}")
-                            config = {"configurable": {"thread_id": str(id)}}
-                    elif message.startswith("/summarize "):
-                        print("Summarizing the conversation...")
-                        async for stream_mode, chunk in graph.astream(
-                            {"need_summarization": True},
-                            config,
-                            stream_mode=["updates", "messages"],
-                        ):
-                            resume_command_needed = process_chunk(stream_mode, chunk)
-                            if resume_command_needed:
-                                break
+            elif message.startswith("/"):
+                if message == "/quit":
+                    print("\n👋 Goodbye!")
+                    break
+                elif message == "/list":
+                    print("Available checkpoints:")
+                    for cpt in await list_checkpoint(db_conn):
+                        print(cpt[0])
+                elif message.startswith("/resume "):
+                    id = message.split(" ")[1]
+                    if not id:
+                        print("Please provide a checkpoint ID to resume.")
                         continue
-                else:
-                    async for stream_mode, chunk in graph.astream(
+                    threads = await get_checkpoint(db_conn, id)
+                    if not threads:
+                        print(f"No checkpoint found with ID: {id}")
+                        continue
+                    else:
+                        print(f"Resuming checkpoint with ID: {id}")
+                        config = {"configurable": {"thread_id": str(id)}}
+                elif message.startswith("/new "):
+                    id = message.split(" ")[1]
+                    if not id:
+                        print("Please provide a checkpoint ID to create.")
+                        continue
+                    threads = await get_checkpoint(db_conn, id)
+                    if threads:
+                        print(f"Checkpoint with ID: {id} already exists.")
+                        continue
+                    else:
+                        print(f"Creating checkpoint with ID: {id}")
+                        config = {"configurable": {"thread_id": str(id)}}
+                        continue
+                elif message.startswith("/summarize"):
+                    print("Summarizing the conversation...")
+                    payload = {"need_summarization": True}
+            else:
+                payload = {
+                    "messages": [
                         {
-                            "messages": [
-                                {
-                                    "role": "user",
-                                    "content": message,
-                                }
-                            ]
-                        },
-                        config,
-                        stream_mode=["updates", "messages"],
-                    ):
-                        resume_command_needed = process_chunk(stream_mode, chunk)
-                        if resume_command_needed:
-                            break
+                            "role": "user",
+                            "content": message,
+                        }
+                    ]
+                }
+
+            async for stream_mode, chunk in graph.astream(
+                payload,
+                config,
+                stream_mode=["updates", "messages"],
+            ):
+                resume_command_needed = process_chunk(stream_mode, chunk)
+                if resume_command_needed:
+                    print("🔧 Use [y/Y] to accept 🔧")
+                    break
 
         except KeyboardInterrupt:
             print("\n\n👋 Goodbye!")
