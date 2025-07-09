@@ -38,7 +38,7 @@ async def loop(graph: Runnable):
                 if message.lower() == "y":
                     type = "accept"
 
-                payload = Command(resume=[{"type": type}])
+                payload = Command(resume=type)
 
             elif message.startswith("/"):
                 if message == "/quit":

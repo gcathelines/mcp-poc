@@ -145,8 +145,10 @@ def add_human_in_the_loop(
             "description": "Please review the tool call",
         }
 
-        response = interrupt([request])[0]
-        if response["type"] == "accept":
+        response = interrupt([request])
+        if not isinstance(response, str):
+            response = next(iter(response.values()))
+        if response == "accept":
             tool_response = await tool.ainvoke(tool_input, config)
         else:
             tool_response = "Tool call was rejected by the user."
